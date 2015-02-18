@@ -76,3 +76,35 @@ class MFRC522:
         Reserved32          = 0x3D
         Reserved33          = 0x3E
         Reserved34          = 0x3F
+
+    def __init__(self, spi_dev):
+        """Initializes a MFRC522 module.
+
+        spi_dev should be an object representing a SPI interface to which
+        the Reader is connected. It should have the following methods:
+          * transfer(bytes):  Selects the slave, transfers bytes, unselects
+                              the slave and returns received bytes.
+          * hard_powerdown(): Pulls NRST signal of the reader LOW, thus powering
+                              it down
+          * reset():          Pushes NRST signal of the reader HIGH,
+                              thus resetting it (and exiting the hard_powerdown)
+                              If the NRST is already high, this function shall
+                              pull it LOW and then HIGH again.
+        """
+
+        self.spi = spi_dev
+
+        # TODO initialize the module
+        # self.init()
+
+    def write_register(self, register, val):
+        self.spi.transfer(bytes((register.value << 1, val)))
+
+    def read_register(self, register):
+        return self.spi.transfer(bytes(((register.value << 1) | 0x80, 0)))[1]
+
+    def set_mask_in_register(self, reg, mask):
+        self.write_register(reg, self.read_register(reg) | mask)
+
+    def clear_mask_in_register(self, reg, mask):
+        self.write_register(reg, self.read_register(reg) & (~mask))
