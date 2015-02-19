@@ -53,8 +53,8 @@ class MFRC522:
         Reserved14          = 0x1E
         SerialSpeedReg      = 0x1F
         Reserved20          = 0x20
-        CRCResultRegM       = 0x21
-        CRCResultRegL       = 0x22
+        CRCResultRegL       = 0x21
+        CRCResultRegH       = 0x22
         Reserved21          = 0x23
         ModWidthReg         = 0x24
         Reserved22          = 0x25
@@ -136,6 +136,23 @@ class MFRC522:
 
     def command(self, command):
         self.write_register(MFRC522.Registers.CommandReg, command.value)
+
+    def calculate_crc_a(self, data):
+        self.command(MFRC522.Commands.PCD_IDLE)
+        self.write_register(MFRC522.Registers.DivIrqReg, 0x04)
+        self.set_mask_in_register(MFRC522.Registers.FIFOLevelReg, 0x80)
+
+        for byte in data:
+            self.write_register(MFRC522.Registers.FIFODataReg, byte)
+
+        self.command(MFRC522.Commands.PCD_CALCCRC)
+
+        # Busy-wait for the CRC calculation to finish
+        while not self.read_register(MFRC522.Registers.DivIrqReg) & 0x04:
+            pass
+
+        return bytes((self.read_register(MFRC522.Registers.CRCResultRegH),
+                      self.read_register(MFRC522.Registers.CRCResultRegL)))
 
     def transcieve(self, data):
         self.write_register(MFRC522.Registers.ComIEnReg, 0xF7)
