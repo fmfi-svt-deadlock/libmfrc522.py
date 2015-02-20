@@ -1,3 +1,11 @@
+from enum import Enum
+
+class NoTagError(Exception):
+    pass
+
+class TransmissionError(Exception):
+    pass
+
 class MFRC522:
 
     MAX_LEN = 16
@@ -14,7 +22,7 @@ class MFRC522:
     class Registers(Enum):
         Reserved00          = 0x00
         CommandReg          = 0x01
-        CommIEnReg          = 0x02
+        ComIEnReg           = 0x02
         DivlEnReg           = 0x03
         CommIrqReg          = 0x04
         DivIrqReg           = 0x05
@@ -33,20 +41,20 @@ class MFRC522:
         TxModeReg           = 0x12
         RxModeReg           = 0x13
         TxControlReg        = 0x14
-        TxAutoReg           = 0x15
+        TxASKReg            = 0x15
         TxSelReg            = 0x16
         RxSelReg            = 0x17
         RxThresholdReg      = 0x18
         DemodReg            = 0x19
         Reserved11          = 0x1A
         Reserved12          = 0x1B
-        MifareReg           = 0x1C
-        Reserved13          = 0x1D
+        MfTxReg             = 0x1C
+        MfRxReg             = 0x1D
         Reserved14          = 0x1E
         SerialSpeedReg      = 0x1F
         Reserved20          = 0x20
-        CRCResultRegM       = 0x21
-        CRCResultRegL       = 0x22
+        CRCResultRegL       = 0x21
+        CRCResultRegH       = 0x22
         Reserved21          = 0x23
         ModWidthReg         = 0x24
         Reserved22          = 0x25
@@ -94,8 +102,16 @@ class MFRC522:
 
         self.spi = spi_dev
 
-        # TODO initialize the module
-        # self.init()
+        self.reset()
+
+        self.write_register(MFRC522.Registers.TModeReg,      0x8D)
+        self.write_register(MFRC522.Registers.TPrescalerReg, 0x3E)
+        self.write_register(MFRC522.Registers.TReloadRegL,   0x1E)
+        self.write_register(MFRC522.Registers.TReloadRegH,   0x00)
+        self.write_register(MFRC522.Registers.TxASKReg,      0x40)
+        self.write_register(MFRC522.Registers.ModeReg,       0x3D)
+
+        self.antenna_on()
 
     def write_register(self, register, val):
         self.spi.transfer(bytes((register.value << 1, val)))
@@ -108,3 +124,74 @@ class MFRC522:
 
     def clear_mask_in_register(self, reg, mask):
         self.write_register(reg, self.read_register(reg) & (~mask))
+
+    def reset(self):
+        self.command(MFRC522.Commands.PCD_RESETPHASE)
+
+    def antenna_on(self):
+        self.set_mask_in_register(MFRC522.Registers.TxControlReg, 0x03)
+
+    def antenna_off(self):
+        self.clear_mask_in_register(MFRC522.Registers.TxControlReg, 0x03)
+
+    def command(self, command):
+        self.write_register(MFRC522.Registers.CommandReg, command.value)
+
+    def calculate_crc_a(self, data):
+        self.command(MFRC522.Commands.PCD_IDLE)
+        self.write_register(MFRC522.Registers.DivIrqReg, 0x04)
+        self.set_mask_in_register(MFRC522.Registers.FIFOLevelReg, 0x80)
+
+        for byte in data:
+            self.write_register(MFRC522.Registers.FIFODataReg, byte)
+
+        self.command(MFRC522.Commands.PCD_CALCCRC)
+
+        # Busy-wait for the CRC calculation to finish
+        while not self.read_register(MFRC522.Registers.DivIrqReg) & 0x04:
+            pass
+
+        return bytes((self.read_register(MFRC522.Registers.CRCResultRegH),
+                      self.read_register(MFRC522.Registers.CRCResultRegL)))
+
+    def transcieve(self, data):
+        self.write_register(MFRC522.Registers.ComIEnReg, 0xF7)
+        self.clear_mask_in_register(MFRC522.Registers.CommIrqReg, 0x80)
+        self.set_mask_in_register(MFRC522.Registers.FIFOLevelReg, 0x80)
+
+        self.command(MFRC522.Commands.PCD_IDLE)
+
+        for byte in data:
+            self.write_register(MFRC522.Registers.FIFODataReg, byte)
+
+        self.command(MFRC522.Commands.PCD_TRANSCEIVE)
+
+        self.set_mask_in_register(MFRC522.Registers.BitFramingReg, 0x80)
+
+        # Busy wait for the transmission to finish, for the error to occur
+        # or for the command timeout
+        while True:
+            irq_reg = self.read_register(MFRC522.Registers.CommIrqReg)
+            if (irq_reg & 0x20 and irq_reg & 0x40) or (irq_reg & 0x03):
+                break
+
+        self.clear_mask_in_register(MFRC522.Registers.BitFramingReg, 0x80)
+
+        if (self.read_register(MFRC522.Registers.ErrorReg) & 0x1B):
+            self.command(MFRC522.Commands.PCD_IDLE)
+            raise TransmissionError()
+
+        if self.read_register(MFRC522.Registers.CommIrqReg) & 0x01:
+            self.command(MFRC522.Commands.PCD_IDLE)
+            raise NoTagError()
+
+        response = []
+
+        response_bytes = self.read_register(MFRC522.Registers.FIFOLevelReg)
+
+        for i in range(0, response_bytes):
+            response.append(self.read_register(MFRC522.Registers.FIFODataReg))
+
+        self.command(MFRC522.Commands.PCD_IDLE)
+
+        return response
