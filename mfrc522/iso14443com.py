@@ -1,8 +1,15 @@
+import crcmod
 from .mfrc522 import *
+import struct
 
 SEL_CASCADE_1   = 0x93
 SEL_CASCADE_2   = 0x95
 SEL_CASCADE_3   = 0x97
+
+__crc_func = crcmod.mkCrcFun(0x11021, initCrc=0x6363)
+
+def __calculate_crt(data):
+    return struct.pack('<H', __crc_func(data))
 
 def __perform_cascade(module, cascade_level):
 
@@ -13,8 +20,6 @@ def __perform_cascade(module, cascade_level):
 
     # print('Performing cascade', cascade_level)
 
-    module.write_register(MFRC522.Registers.BitFramingReg, 0x00)
-
     # transmit ANTICOLLISION command
     uid_cln = module.transcieve(bytes((cascade_level, 0x20)))
 
@@ -22,7 +27,7 @@ def __perform_cascade(module, cascade_level):
 
     # transmit SELECT command
     data = bytes((cascade_level, 0x70)) + bytes(uid_cln)
-    data += module.calculate_crc_a(data)
+    data += __calculate_crt(data)
     response = module.transcieve(data)
 
     if response[0] & 0x04:
@@ -39,6 +44,7 @@ def get_ids(module):
     module.write_register(MFRC522.Registers.BitFramingReg, 0x07)
     try:
         # module.transcieve([0x26])  # REQA
+        module.write_register(MFRC522.Registers.BitFramingReg, 0x00)
         return __perform_cascade(module, SEL_CASCADE_1)
 
     except NoTagError:
