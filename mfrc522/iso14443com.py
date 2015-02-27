@@ -43,10 +43,9 @@ def __perform_cascade(module, cascade_level):
 def get_ids(module):
     module.write_register(MFRC522.Registers.BitFramingReg, 0x07)
     try:
-        # module.transcieve([0x26])  # REQA
+        module.transcieve([0x26])  # REQA
         module.write_register(MFRC522.Registers.BitFramingReg, 0x00)
         return __perform_cascade(module, SEL_CASCADE_1)
-
     except NoTagError:
         return None
 
@@ -54,6 +53,11 @@ def are_cards_in_field(module):
     module.write_register(MFRC522.Registers.BitFramingReg, 0x07)
     try:
         module.transcieve([0x26])  # REQA
+        try:
+            module.transcieve([0x26])  # REQA second time, to reset the card
+        except NoTagError:
+            # There should be no response, no modulation to the second REQA
+            pass
         return True
     except NoTagError:
         return False
