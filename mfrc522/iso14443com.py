@@ -8,7 +8,7 @@ SEL_CASCADE_3   = 0x97
 
 __crc_func = crcmod.mkCrcFun(0x11021, initCrc=0x6363)
 
-def __calculate_crt(data):
+def __calculate_crc(data):
     return struct.pack('<H', __crc_func(data))
 
 def __perform_cascade(module, cascade_level):
@@ -22,7 +22,7 @@ def __perform_cascade(module, cascade_level):
 
     # transmit SELECT command
     data = bytes((cascade_level, 0x70)) + bytes(uid_cln)
-    data += __calculate_crt(data)
+    data += __calculate_crc(data)
     response = module.transcieve(data)
 
     if response[0] & 0x04:
