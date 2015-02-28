@@ -12,18 +12,13 @@ def __calculate_crt(data):
     return struct.pack('<H', __crc_func(data))
 
 def __perform_cascade(module, cascade_level):
-
     if cascade_level != SEL_CASCADE_1 and \
        cascade_level != SEL_CASCADE_2 and \
        cascade_level != SEL_CASCADE_3:
         return None
 
-    # print('Performing cascade', cascade_level)
-
     # transmit ANTICOLLISION command
     uid_cln = module.transcieve(bytes((cascade_level, 0x20)))
-
-    # TODO check for collisions, screw it for now
 
     # transmit SELECT command
     data = bytes((cascade_level, 0x70)) + bytes(uid_cln)
@@ -31,16 +26,13 @@ def __perform_cascade(module, cascade_level):
     response = module.transcieve(data)
 
     if response[0] & 0x04:
-        # print('UID incomplete, cascading...')
         return uid_cln[1:4] + __perform_cascade(module, cascade_level + 2)
     elif response[0] & 0x24 == 0x20:
-        # print('UID complete, PICC compliant with ISO/IEC 14443-4')
         return uid_cln[:4]
     elif response[0] & 0x24 == 0:
-        # print('UID complete, PICC not compliant with ISO/IEC 14443-4')
         return uid_cln[:4]
 
-def get_ids(module):
+def get_id(module):
     module.write_register(MFRC522.Registers.BitFramingReg, 0x07)
     try:
         module.transcieve([0x26])  # REQA

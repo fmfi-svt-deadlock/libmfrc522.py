@@ -106,8 +106,8 @@ class MFRC522:
 
         self.write_register(MFRC522.Registers.TModeReg,      0x8D)
         self.write_register(MFRC522.Registers.TPrescalerReg, 0x3E)
-        self.write_register(MFRC522.Registers.TReloadRegL,   0x1E)
         self.write_register(MFRC522.Registers.TReloadRegH,   0x00)
+        self.write_register(MFRC522.Registers.TReloadRegL,   0x1E)
         self.write_register(MFRC522.Registers.TxASKReg,      0x40)
         self.write_register(MFRC522.Registers.ModeReg,       0x3D)
 
@@ -126,7 +126,8 @@ class MFRC522:
         return self.spi.transfer(bytes(((register.value << 1) | 0x80, 0)))[1]
 
     def read_register_data(self, register, amount):
-        return self.spi.transfer(bytes(((register.value << 1) | 0x80, )*(amount+1)))[1:]
+        request = bytes(((register.value << 1) | 0x80,)*(amount+1))
+        return self.spi.transfer(request)[1:]
 
     def set_mask_in_register(self, reg, mask):
         self.write_register(reg, self.read_register(reg) | mask)
@@ -185,10 +186,11 @@ class MFRC522:
 
         self.write_register(MFRC522.Registers.BitFramingReg, bit_framing_reg)
 
-        if irq_reg & 0x02 and \
-           (self.read_register(MFRC522.Registers.ErrorReg) & 0x1B):
-            self.command(MFRC522.Commands.PCD_IDLE)
-            raise TransmissionError()
+        if irq_reg & 0x02:
+            error = self.read_register(MFRC522.Registers.ErrorReg)
+            if error & 0x1B:
+                self.command(MFRC522.Commands.PCD_IDLE)
+                raise TransmissionError()
 
         if irq_reg & 0x01:
             self.command(MFRC522.Commands.PCD_IDLE)
