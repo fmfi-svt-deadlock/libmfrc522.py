@@ -115,19 +115,22 @@ class MFRC522:
 
     def write_register(self, register, val):
         if type(val) is int:
-            self.spi.transfer(bytes((register.value << 1, val)))
-        else:
-            data = [register.value << 1]
-            for byte in val:
-                data.append(byte)
-            self.spi.transfer(bytes(data))
+            val = bytes([val])
+        # The format of the address byte is:
+        # 7 (MSB): 1 - Read. 0 - write
+        # 6 - 1  : Address
+        # 0      : 0
+        data = [register.value << 1]
+        for byte in val:
+            data.append(byte)
+        self.spi.transfer(bytes(data))
 
-    def read_register(self, register):
-        return self.spi.transfer(bytes(((register.value << 1) | 0x80, 0)))[1]
-
-    def read_register_data(self, register, amount):
+    def read_register(self, register, amount=1):
         request = bytes(((register.value << 1) | 0x80,)*(amount+1))
-        return self.spi.transfer(request)[1:]
+        if (amount == 1):
+            return self.spi.transfer(request)[1]
+        else:
+            return self.spi.transfer(request)[1:]
 
     def set_mask_in_register(self, register, mask):
         self.write_register(register, self.read_register(register) | mask)
@@ -198,8 +201,7 @@ class MFRC522:
 
         response_bytes = self.read_register(Registers.FIFOLevelReg)
 
-        response = self.read_register_data(Registers.FIFODataReg,
-                                           response_bytes)
+        response = self.read_register(Registers.FIFODataReg, response_bytes)
 
         self.command(Commands.PCD_IDLE)
 
