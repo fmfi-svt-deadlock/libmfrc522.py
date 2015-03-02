@@ -10,7 +10,7 @@ _crc_func = crcmod.mkCrcFun(0x11021, initCrc=0x6363)
 
 class CardCommands(Enum):
     REQA         = 0x26
-    ANTICOLL_n   = [0x93, 0x95, 0x97]
+    ANTICOLL_n   = (0x93, 0x95, 0x97)
 
 class CardException(Exception):
     """The card did something unexpected."""
@@ -42,9 +42,8 @@ def _perform_cascade(mfrc522):
             result += uid_cln[:4]
             return result
         elif response[0] & 0x04:
-            # UID incomplete; continue the cascade
             result += uid_cln[1:4]
-            pass
+            # UID incomplete; continue the cascade
         else:
             # Something's wrong if we get here.
             raise CardException
