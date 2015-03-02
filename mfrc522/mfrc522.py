@@ -92,23 +92,34 @@ class MFRC522:
         the Reader is connected. It should have the following methods:
           * transfer(bytes):  Selects the slave, transfers bytes, unselects
                               the slave and returns received bytes.
-          * hard_powerdown(): Pulls NRST signal of the reader LOW, thus powering
+          * hard_powerdown(): Sets NRST signal of the reader LOW, thus powering
                               it down
-          * reset():          Pushes NRST signal of the reader HIGH,
+          * reset():          Sets NRST signal of the reader HIGH,
                               thus resetting it (and exiting the hard_powerdown)
                               If the NRST is already high, this function shall
-                              pull it LOW and then HIGH again.
+                              set it LOW and then HIGH again.
         """
 
         self.spi = spi_dev
 
         self.reset()
 
+        # Set TAuto - timer starts automatically after the enf of transmission
+        #     TPrescaler_Hi - set to 0x0D
         self.write_register(Registers.TModeReg,      0x8D)
+        # Set TPrescaler_Lo - set to 0x3E.
+        # Together with TPrescaler_Hi the timer will run at approx 2KHz
         self.write_register(Registers.TPrescalerReg, 0x3E)
+        # Set reload value to 0x1E. The timer will run for approx 15ms.
         self.write_register(Registers.TReloadRegH,   0x00)
         self.write_register(Registers.TReloadRegL,   0x1E)
+        # Set Force100ASK: Forces a 100% ASK modulation independent of the
+        #                  ModGSPReg setting
         self.write_register(Registers.TxASKReg,      0x40)
+        # Set TXWaitRF   : Transmitter will only start if the RF field is
+        #                  is present
+        #     PolMFin    : MFIN pin is active HIGH
+        #     CRCPreset  : to 0x6363 as specified in ISO/IEC 14443
         self.write_register(Registers.ModeReg,       0x3D)
 
         self.antenna_on()
@@ -142,6 +153,9 @@ class MFRC522:
         self.command(Commands.PCD_RESETPHASE)
 
     def antenna_on(self):
+        # Set Tx2RFEn and TCRFEn: to make TX1 and TX2 pins deliver energy
+        #                         carrier modulated by the transmission data
+        #                         to the antenna
         self.set_mask_in_register(Registers.TxControlReg, 0x03)
 
     def antenna_off(self):
@@ -152,7 +166,7 @@ class MFRC522:
 
     def calculate_crc_a(self, data):
         self.command(Commands.PCD_IDLE)
-        self.write_register(Registers.DivIrqReg, 0x04)
+        # Flush the FIFO buffer
         self.set_mask_in_register(Registers.FIFOLevelReg, 0x80)
 
         self.write_register(Registers.FIFODataReg, data)
@@ -160,6 +174,7 @@ class MFRC522:
         self.command(Commands.PCD_CALCCRC)
 
         # Busy-wait for the CRC calculation to finish
+        # the CRCIRq bit should become 0
         while not self.read_register(Registers.DivIrqReg) & 0x04:
             pass
 
@@ -167,8 +182,12 @@ class MFRC522:
                       self.read_register(Registers.CRCResultRegL)))
 
     def transceive(self, data):
+        # Invert output interrupt signal; enable Tx interrupt, Rx interrupt,
+        # idle interrupt, FIFO Low interrupt, ErrorInterrupt and TimerInterrupt
         self.write_register(Registers.ComIEnReg, 0xF7)
+        # Clear interrupt request bits
         self.clear_mask_in_register(Registers.CommIrqReg, 0x80)
+        # Flush the FIFO
         self.write_register(Registers.FIFOLevelReg, 0x80)
 
         self.write_register(Registers.FIFODataReg, data)
@@ -176,25 +195,29 @@ class MFRC522:
         self.command(Commands.PCD_TRANSCEIVE)
 
         bit_framing_reg = self.read_register(Registers.BitFramingReg)
-        self.write_register(Registers.BitFramingReg,
-                            bit_framing_reg | 0x80)
+        # Set StartSend bit
+        self.write_register(Registers.BitFramingReg, bit_framing_reg | 0x80)
 
         # Busy wait for the transmission to finish, for the error to occur
         # or for the command timeout
         irq_reg = None
         while True:
             irq_reg = self.read_register(Registers.CommIrqReg)
+            # Wait for interrupts: Tx and Rx complete, error or timeout
             if (irq_reg & 0x20 and irq_reg & 0x40) or (irq_reg & 0x03):
                 break
 
+        # Restore original BitFramingReg, thus clearing the StartSend flag
         self.write_register(Registers.BitFramingReg, bit_framing_reg)
 
+        # Error interrupt has fired
         if irq_reg & 0x02:
             error = self.read_register(Registers.ErrorReg)
             if error & 0x1B:
                 self.command(Commands.PCD_IDLE)
                 raise TransmissionError()
 
+        # Timeout interrupt has fired
         if irq_reg & 0x01:
             self.command(Commands.PCD_IDLE)
             raise NoTagError()

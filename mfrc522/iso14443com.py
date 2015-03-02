@@ -1,8 +1,11 @@
 import struct
 from enum import Enum
 import crcmod
-from .mfrc522 import MFRC522, Commands, Registers, NoTagError, TransmissionError
+from .mfrc522 import (MFRC522, Commands, Registers, NoTagError,
+                      TransmissionError)
 
+# 0x11021 is hex representation of the CRC polynomial used by the ISO/IEC1444
+# 0x6363 is the preset value.
 _crc_func = crcmod.mkCrcFun(0x11021, initCrc=0x6363)
 
 class CardCommands(Enum):
